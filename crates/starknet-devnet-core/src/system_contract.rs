@@ -52,6 +52,14 @@ impl Deployed for SystemContract {
     fn get_address(&self) -> ContractAddress {
         self.address
     }
+
+    fn get_class_hash(&self) -> Felt {
+        self.class_hash
+    }
+
+    // fn get_contract_class(&self) -> ContractClass {
+    //     self.contract_class
+    // }
 }
 
 impl Accounted for SystemContract {

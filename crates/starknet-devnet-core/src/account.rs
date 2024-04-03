@@ -109,6 +109,8 @@ impl Deployed for Account {
         self.declare_if_undeclared(state, self.class_hash, &self.contract_class)?;
 
         state.predeploy_contract(self.account_address, self.class_hash)?;
+        
+        // state.is_contract_declared(broadcasted_deploy_account_transaction.class_hash);
 
         // set public key directly in the most underlying state
         let public_key_storage_var = get_storage_var_address("Account_public_key", &[])?;
@@ -127,6 +129,14 @@ impl Deployed for Account {
     fn get_address(&self) -> ContractAddress {
         self.account_address
     }
+
+    fn get_class_hash(&self) -> Felt {
+        self.class_hash
+    }
+
+    // fn get_contract_class(&self) -> ContractClass {
+    //     self.contract_class
+    // }
 }
 
 impl Accounted for Account {

@@ -61,14 +61,19 @@ pub fn add_deploy_account_transaction_v1(
     broadcasted_deploy_account_transaction: BroadcastedDeployAccountTransactionV1,
 ) -> DevnetResult<(TransactionHash, ContractAddress)> {
     if broadcasted_deploy_account_transaction.common.max_fee.0 == 0 {
+        println!(" hee?");
+
         return Err(Error::MaxFeeZeroError { tx_type: "deploy account transaction".into() });
     }
 
     if !starknet.state.is_contract_declared(broadcasted_deploy_account_transaction.class_hash) {
+        println!("why is that?");
+
         return Err(Error::StateError(crate::error::StateError::NoneClassHash(
             broadcasted_deploy_account_transaction.class_hash,
         )));
     }
+    println!("1");
 
     let blockifier_deploy_account_transaction = broadcasted_deploy_account_transaction
         .create_blockifier_deploy_account(starknet.chain_id().to_felt(), false)?;

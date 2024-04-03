@@ -1,7 +1,7 @@
 use blockifier::state::state_api::StateReader;
 use starknet_types::contract_address::ContractAddress;
 use starknet_types::contract_class::ContractClass;
-use starknet_types::felt::ClassHash;
+use starknet_types::felt::{ClassHash, Felt};
 use starknet_types::rpc::state::Balance;
 
 use crate::account::FeeToken;
@@ -28,6 +28,8 @@ pub trait HashIdentifiedMut {
 pub(crate) trait Deployed {
     fn deploy(&self, state: &mut StarknetState) -> DevnetResult<()>;
     fn get_address(&self) -> ContractAddress;
+    fn get_class_hash(&self) -> Felt;
+    // fn get_contract_class(&self) -> ContractClass;
     /// `class_hash` is sierra hash for cairo1 contracts
     fn declare_if_undeclared(
         &self,

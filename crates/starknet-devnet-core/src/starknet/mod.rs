@@ -22,7 +22,7 @@ use starknet_rs_ff::FieldElement;
 use starknet_rs_signers::Signer;
 use starknet_types::chain_id::ChainId;
 use starknet_types::contract_address::ContractAddress;
-use starknet_types::contract_class::ContractClass;
+use starknet_types::contract_class::{Cairo0ContractClass, Cairo0Json, ContractClass};
 use starknet_types::emitted_event::EmittedEvent;
 use starknet_types::felt::{split_biguint, ClassHash, Felt, TransactionHash};
 use starknet_types::num_bigint::BigUint;
@@ -41,9 +41,7 @@ use starknet_types::rpc::transactions::broadcasted_deploy_account_transaction_v3
 use starknet_types::rpc::transactions::broadcasted_invoke_transaction_v1::BroadcastedInvokeTransactionV1;
 use starknet_types::rpc::transactions::broadcasted_invoke_transaction_v3::BroadcastedInvokeTransactionV3;
 use starknet_types::rpc::transactions::{
-    BlockTransactionTrace, BroadcastedTransaction, BroadcastedTransactionCommon,
-    DeclareTransaction, L1HandlerTransaction, SimulatedTransaction, SimulationFlag, Transaction,
-    TransactionTrace, TransactionWithReceipt, Transactions,
+    BlockTransactionTrace, BroadcastedTransaction, BroadcastedTransactionCommon, DeclareTransaction, L1HandlerTransaction, SimulatedTransaction, SimulationFlag, Transaction, TransactionTrace, TransactionType, TransactionWithReceipt, Transactions
 };
 use starknet_types::traits::HashProducer;
 use tracing::{error, info};
@@ -59,7 +57,7 @@ use crate::constants::{
     CHARGEABLE_ACCOUNT_ADDRESS, CHARGEABLE_ACCOUNT_PRIVATE_KEY, DEVNET_DEFAULT_CHAIN_ID,
     DEVNET_DEFAULT_DATA_GAS_PRICE, DEVNET_DEFAULT_GAS_PRICE, DEVNET_DEFAULT_STARTING_BLOCK_NUMBER,
     ETH_ERC20_CONTRACT_ADDRESS, ETH_ERC20_NAME, ETH_ERC20_SYMBOL, STRK_ERC20_CONTRACT_ADDRESS,
-    STRK_ERC20_NAME, STRK_ERC20_SYMBOL,
+    STRK_ERC20_NAME, STRK_ERC20_SYMBOL, UDC_CONTRACT_PATH,
 };
 use crate::contract_class_choice::AccountContractClassChoice;
 use crate::error::{DevnetResult, Error, TransactionValidationError};
@@ -68,7 +66,7 @@ use crate::predeployed_accounts::PredeployedAccounts;
 use crate::raw_execution::{Call, RawExecution};
 use crate::state::state_diff::StateDiff;
 use crate::state::state_update::StateUpdate;
-use crate::state::{CustomState, StarknetState};
+use crate::state::{CustomState, CustomStateReader, StarknetState};
 use crate::traits::{AccountGenerator, Deployed, HashIdentified, HashIdentifiedMut};
 use crate::transactions::{StarknetTransaction, StarknetTransactions};
 use crate::utils::get_versioned_constants;
@@ -194,10 +192,53 @@ impl Starknet {
 
         state.commit_with_diff()?;
 
+        // Genesis block
+
+
         // when forking, the number of the first new block to be mined is equal to the last origin
         // block (the one specified by the user) plus one.
         let starting_block_number =
             config.fork_config.block_number.map_or(DEVNET_DEFAULT_STARTING_BLOCK_NUMBER, |n| n + 1);
+
+
+
+        
+        let mut transactions = StarknetTransactions::default();
+
+        let chain_id = DEVNET_DEFAULT_CHAIN_ID.to_felt();
+        // let contract_class = udc_contract.get_contract_class();
+        let cairo_0_contract_class = Cairo0ContractClass::RawJson(Cairo0Json::raw_json_from_path(
+            UDC_CONTRACT_PATH,
+        )?);
+        let broadcasted_tx = BroadcastedDeclareTransactionV1::new(
+            chargeable_account.account_address,
+            Fee(100),
+            &vec![],
+            Felt::from(0),
+            &cairo_0_contract_class,
+            Felt::from(1),
+        );
+        let class_hash = udc_contract.get_class_hash();
+        let transaction_hash =
+            broadcasted_tx.calculate_transaction_hash(&chain_id, &class_hash).unwrap();
+        let declare_transaction = broadcasted_tx.create_declare(class_hash, transaction_hash);
+        let transaction = Transaction::Declare(DeclareTransaction::Version1(declare_transaction));
+        let trace = create_trace(
+            &mut Default::default(),
+            TransactionType::Declare,
+            &Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let transaction_to_add = StarknetTransaction::create_accepted(&transaction, TransactionExecutionInfo::default(), trace);
+        transactions.insert(&transaction_hash, transaction_to_add);
+        println!("transactions.insert");
+
+        // TODO: Unification of SystemContract transactions in genesis block
+        // TODO: Add deploy of SystemContract
+        // TODO: Add UDC / ETH_ERC20 / STRK_ERC20
+        // TODO: add pre deployed accounts transactions
+
         let mut this = Self {
             state,
             init_state: StarknetState::default(),
@@ -211,7 +252,7 @@ impl Starknet {
                 starting_block_number,
             ),
             blocks: StarknetBlocks::new(starting_block_number),
-            transactions: StarknetTransactions::default(),
+            transactions: transactions,
             config: config.clone(),
             pending_block_timestamp_shift: 0,
             next_block_timestamp: None,
@@ -220,6 +261,10 @@ impl Starknet {
         };
 
         this.restart_pending_block()?;
+
+        this.blocks.pending_block.add_transaction(transaction_hash);
+
+        // this.genesis_block()?;
 
         // Set init_state for abort blocks functionality
         // This will be refactored during the genesis block PR
@@ -234,8 +279,79 @@ impl Starknet {
                 Err(err) => return Err(err),
             };
         }
+        println!("this.transactions: {:?}", this.transactions);
+        // println!("this.blocks.pending_block: {:?}", this.blocks.pending_block.get_transactions());
+
+        this.create_block()?;
+
+        // println!("this.blocks.pending_block: {:?}", this.blocks.pending_block.get_transactions());
+        
+        let genesis_block =
+        this.blocks.get_by_hash(this.blocks.last_block_hash.unwrap()).unwrap();
+
+        // println!("genesis_block txs: {:?}", genesis_block.get_transactions());
+        // println!("block_hash: {:?}", genesis_block.block_hash());
+        // println!("block_number: {:?}", genesis_block.block_number());
+
+        println!("this.transactions.get_by_hash: {:?}", this.transactions.get_by_hash(genesis_block.get_transactions()[0]));
 
         Ok(this)
+    }
+    
+    pub fn genesis_block(&mut self) -> DevnetResult<()> {
+        info!("Genesis block");
+        
+        let account_contract_class_hash = self.config.account_contract_class_hash;
+        let accounts = self.predeployed_accounts.get_accounts().clone();
+
+
+
+        let x = self.state.is_contract_declared(account_contract_class_hash);
+        println!("is_contract_declared: {:?}", x);
+
+        // let result =
+        // Starknet::default().add_declare_transaction_v1(transaction);
+        
+        // let declare_txn = BroadcastedDeclareTransactionV1::new(
+        //     sender_address,
+        //     Fee(10000),
+        //     &Vec::new(),
+        //     Felt::from(0),
+        //     &contract_class.into(),
+        //     Felt::from(1),
+        // );
+
+        // let declare_txn = broadcasted_declare_transaction_v1(sender);
+        // let (tx_hash, class_hash) =
+        // self.add_declare_transaction_v1(declare_txn.clone()).unwrap();
+
+        for account in accounts {
+            println!("account public_key: {:?}", account.public_key);
+
+            // println!("account_contract_class_hash: {:?}", account_contract_class_hash);
+            // let transaction = BroadcastedDeployAccountTransactionV1::new(
+            //     &vec![],
+            //     Fee(4000),
+            //     &vec![],
+            //     Felt::from(0),
+            //     account_contract_class_hash,
+            //     Felt::from(13),
+            //     Felt::from(1),
+            // );
+            // println!("transaction.class_hash: {:?}", transaction.class_hash);
+            
+            // let result =
+            //     Starknet::default().add_deploy_account_transaction_v1(transaction);
+            // println!("result: {:?}", result);
+            // println!("result.0: {:?}", result.unwrap().0);
+            // println!("result.1: {:?}", result.unwrap().1);
+
+            // let x = self.add_deploy_account_transaction_v1(transaction)?;
+        }
+
+        println!("self.blocks.pending_block.get_transactions: {:?}", self.blocks.pending_block.get_transactions());
+
+        Ok(())
     }
 
     pub fn restart(&mut self) -> DevnetResult<()> {
@@ -445,7 +561,7 @@ impl Starknet {
         self.transactions.insert(transaction_hash, transaction_to_add);
 
         // create new block from pending one
-        self.generate_new_block(state_diff)?;
+        // self.generate_new_block(state_diff)?;
 
         Ok(())
     }
