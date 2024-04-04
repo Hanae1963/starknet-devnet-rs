@@ -29,7 +29,7 @@ pub(crate) trait Deployed {
     fn deploy(&self, state: &mut StarknetState) -> DevnetResult<()>;
     fn get_address(&self) -> ContractAddress;
     fn get_class_hash(&self) -> Felt;
-    // fn get_contract_class(&self) -> ContractClass;
+    fn get_contract_class(&self) -> &ContractClass;
     /// `class_hash` is sierra hash for cairo1 contracts
     fn declare_if_undeclared(
         &self,

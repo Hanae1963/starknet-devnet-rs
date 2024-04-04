@@ -202,17 +202,23 @@ impl Starknet {
 
 
 
-        
+        use std::time::Instant;
+        let now = Instant::now();
+
         let mut transactions = StarknetTransactions::default();
 
-        let chain_id = DEVNET_DEFAULT_CHAIN_ID.to_felt();
+        let chain_id = config.chain_id.to_felt();
+        let sender_address = chargeable_account.account_address;
         // let contract_class = udc_contract.get_contract_class();
         let cairo_0_contract_class = Cairo0ContractClass::RawJson(Cairo0Json::raw_json_from_path(
             UDC_CONTRACT_PATH,
         )?);
+        // let contract_class_test = udc_contract.get_contract_class().clone();
+        // let test = Cairo0ContractClass::from(contract_class_test);
+    
         let broadcasted_tx = BroadcastedDeclareTransactionV1::new(
-            chargeable_account.account_address,
-            Fee(100),
+            sender_address,
+            Fee(0),
             &vec![],
             Felt::from(0),
             &cairo_0_contract_class,
@@ -233,6 +239,9 @@ impl Starknet {
         let transaction_to_add = StarknetTransaction::create_accepted(&transaction, TransactionExecutionInfo::default(), trace);
         transactions.insert(&transaction_hash, transaction_to_add);
         println!("transactions.insert");
+        
+        let elapsed = now.elapsed();
+        println!("Elapsed: {:.2?}", elapsed);
 
         // TODO: Unification of SystemContract transactions in genesis block
         // TODO: Add deploy of SystemContract

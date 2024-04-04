@@ -57,9 +57,9 @@ impl Deployed for SystemContract {
         self.class_hash
     }
 
-    // fn get_contract_class(&self) -> ContractClass {
-    //     self.contract_class
-    // }
+    fn get_contract_class(&self) -> &ContractClass {
+        &self.contract_class
+    }
 }
 
 impl Accounted for SystemContract {
